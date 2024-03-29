@@ -31,6 +31,17 @@ export default {
       type: "string",
       required: false,
     } as Options,
+    "standby-node-urls": {
+      description: "commas separate multiple standby node urls.",
+      type: "string",
+      required: false,
+    } as Options,
+    "standby-node-retry-number": {
+      description: "number of retries per standby node",
+      type: "number",
+      required: false,
+      default: 3,
+    } as Options,
     ...options.priceConfigFile,
     ...options.priceServiceEndpoint,
     ...options.pythContractAddress,
@@ -44,6 +55,8 @@ export default {
       network,
       accountId,
       privateKeyPath,
+      standbyNodeUrls,
+      standbyNodeRetryNumber,
       priceConfigFile,
       priceServiceEndpoint,
       pythContractAddress,
@@ -78,6 +91,8 @@ export default {
       accountId,
       nodeUrl,
       privateKeyPath,
+      standbyNodeUrls,
+      standbyNodeRetryNumber,
       pythContractAddress
     );
 
