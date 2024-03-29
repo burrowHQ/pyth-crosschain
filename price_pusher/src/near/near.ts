@@ -242,7 +242,7 @@ export class NearAccount {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [_, signedTx] = await signTransaction(contractId, nonce, actions, base_decode(blockHash), this.account.connection.signer, this.account.accountId, this.account.connection.networkId);
     for (const i in this.standbyNodeUrls) {
-      await processTransaction(this.standbyNodeUrls[i as any], signedTx, this.standbyNodeRetryNumber);
+      processTransaction(this.standbyNodeUrls[i as any], signedTx, this.standbyNodeRetryNumber);
     }
   }
 }
