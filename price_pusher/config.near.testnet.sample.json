@@ -2,6 +2,7 @@
   "node-url": "https://rpc.testnet.near.org",
   "network": "testnet",
   "account-id": "payer.testnet",
+  "standby-node-urls": "https://rpc.testnet.pagoda.co",
   "pyth-contract-address": "pyth-oracle.testnet",
   "price-service-endpoint": "https://hermes-beta.pyth.network",
   "price-config-file": "./price-config.beta.sample.yaml"

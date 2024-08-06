@@ -23,6 +23,7 @@ import {
 import { InMemoryKeyStore } from "near-api-js/lib/key_stores";
 import { Action, SignedTransaction, functionCall, signTransaction, stringifyJsonOrBytes } from "near-api-js/lib/transaction";
 import { base_decode } from "near-api-js/lib/utils/serialize";
+import { v4 as uuidv4 } from "uuid";
 
 export class NearPriceListener extends ChainPriceListener {
   constructor(
@@ -70,24 +71,18 @@ export class NearPricePusher implements IPricePusher {
 
   async updatePriceFeed(
     priceIds: string[],
-    pubTimesToPush: number[]
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _pubTimesToPush: number[]
   ): Promise<void> {
-    if (priceIds.length === 0) {
-      return;
-    }
 
-    if (priceIds.length !== pubTimesToPush.length)
-      throw new Error("Invalid arguments");
-
+    const updateId = uuidv4();
     let priceFeedUpdateData;
     try {
       priceFeedUpdateData = await this.getPriceFeedsUpdateData(priceIds);
     } catch (e: any) {
-      console.error(new Date(), "getPriceFeedsUpdateData failed:", e);
+      console.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "getPriceFeedsUpdateData failed:", e);
       return;
     }
-
-    console.log("Pushing ", priceIds);
 
     for (const data of priceFeedUpdateData) {
       let updateFee;
@@ -95,14 +90,15 @@ export class NearPricePusher implements IPricePusher {
         updateFee = await this.account.getUpdateFeeEstimate(data);
         console.log(`Update fee: ${updateFee}`);
       } catch (e: any) {
-        console.error(new Date(), "getUpdateFeeEstimate failed:", e);
+        console.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "getUpdateFeeEstimate failed:", e);
         continue;
       }
 
       try {
-        await this.account.updatePriceFeeds(data, updateFee);
+        console.log(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin update");
+        await this.account.updatePriceFeeds(updateId, priceIds, data, updateFee);
       } catch (e: any) {
-        console.error(new Date(), "updatePriceFeeds failed:", e);
+        console.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "updatePriceFeeds failed:", e);
       }
     }
   }
@@ -160,11 +156,13 @@ export class NearAccount {
   }
 
   async updatePriceFeeds(
+    updateId: string,
+    priceIds: string[],
     data: string,
     updateFee: any
   ) {
     if (this.standbyNodeUrls) {
-      await this.sendTransactionWithMutliRpcs(this.pythAccountId, "update_price_feeds", { data }, updateFee);
+      await this.sendTransactionWithMutliRpcs(updateId, priceIds, this.pythAccountId, "update_price_feeds", { data }, updateFee);
     } else {
       const outcome = await this.account.functionCall({
         contractId: this.pythAccountId,
@@ -179,12 +177,14 @@ export class NearAccount {
       if (is_success) {
         console.log(
           new Date(),
+          `[UM] (${updateId}) [${priceIds}]`,
           "updatePriceFeeds tx successful. Tx hash: ",
           outcome["transaction"]["hash"]
         );
       } else {
         console.error(
           new Date(),
+          `[UM] (${updateId}) [${priceIds}]`,
           "updatePriceFeeds tx failed:",
           JSON.stringify(failureMessages, undefined, 2)
         );
@@ -227,12 +227,12 @@ export class NearAccount {
     }
   }
 
-  async sendTransactionWithMutliRpcs(contractId: string, methodName: string, args: object, attachedDeposit: any) {
+  async sendTransactionWithMutliRpcs(updateId: string, priceIds: string[], contractId: string, methodName: string, args: object, attachedDeposit: any) {
     const actions: Action[] = [functionCall(methodName, args, '300000000000000' as any, attachedDeposit, stringifyJsonOrBytes, false)];
     this.account.accessKeyByPublicKeyCache = {};
     const accessKeyInfo = await this.account.findAccessKey(contractId, actions);
     if (!accessKeyInfo) {
-      console.error(`Can not sign transactions for account ${this.account.accountId} on network ${this.account.connection.networkId}, no matching key pair exists for this account`, 'KeyNotFound');
+      console.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, `Can not sign transactions for account ${this.account.accountId} on network ${this.account.connection.networkId}, no matching key pair exists for this account`, 'KeyNotFound');
       return;
     }
     const { accessKey } = accessKeyInfo;
@@ -242,30 +242,43 @@ export class NearAccount {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [_, signedTx] = await signTransaction(contractId, nonce, actions, base_decode(blockHash), this.account.connection.signer, this.account.accountId, this.account.connection.networkId);
     for (const i in this.standbyNodeUrls) {
-      processTransaction(this.standbyNodeUrls[i as any], signedTx, this.standbyNodeRetryNumber);
+      processTransaction(updateId, priceIds, this.standbyNodeUrls[i as any], signedTx, this.standbyNodeRetryNumber);
     }
   }
 }
 
-async function processTransaction(url: string, signedTx: SignedTransaction, retryNumber: number) {
+async function processTransaction(updateId: string, priceIds: string[], url: string, signedTx: SignedTransaction, retryNumber: number) {
   let outcome = undefined;
   const provider = new providers.JsonRpcProvider({ url });
   for (let i = 0; i < retryNumber; i++) {
     try {
       outcome = await provider.sendTransaction(signedTx);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const [is_success, _] = checkOutcome(outcome);
+      const [is_success, failureMessages] = checkOutcome(outcome);
       if (is_success) {
         console.log(
           new Date(),
+          `[UM] (${updateId}) [${priceIds}]`,
           "updatePriceFeeds tx successful. nodeUrl:", url, "Tx hash: ",
           outcome["transaction"]["hash"]
+        );
+      } else {
+        console.error(
+          new Date(),
+          `[UM] (${updateId}) [${priceIds}]`,
+          "nodeUrl:", url,
+          "updatePriceFeeds tx failed:",
+          JSON.stringify(failureMessages, undefined, 2)
         );
       }
       break;
     } catch (error: any) {
       if (error.type === 'InvalidNonce') {
+        console.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "nodeUrl:", url, "updatePriceFeeds InvalidNonce failed:", error);
         break;
+      }
+      if (i == retryNumber - 1){
+        console.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "nodeUrl:", url, "updatePriceFeeds failed:", error);
       }
     }
   }

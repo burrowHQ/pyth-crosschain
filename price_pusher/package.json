@@ -41,6 +41,7 @@
   "devDependencies": {
     "@types/ethereum-protocol": "^1.0.2",
     "@types/jest": "^27.4.1",
+    "@types/uuid": "^10.0.0",
     "@types/yargs": "^17.0.10",
     "@typescript-eslint/eslint-plugin": "^5.20.0",
     "@typescript-eslint/parser": "^5.20.0",
@@ -60,6 +61,7 @@
     "aptos": "^1.8.5",
     "joi": "^17.6.0",
     "near-api-js": "^3.0.2",
+    "uuid": "^10.0.0",
     "web3": "^1.8.1",
     "web3-eth-contract": "^1.8.1",
     "yaml": "^2.1.1",
