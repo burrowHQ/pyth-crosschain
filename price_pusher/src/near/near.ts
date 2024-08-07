@@ -74,10 +74,12 @@ export class NearPricePusher implements IPricePusher {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _pubTimesToPush: number[]
   ): Promise<void> {
-
     const updateId = uuidv4();
+    console.log(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin updatePriceFeed");
+
     let priceFeedUpdateData;
     try {
+      console.log(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin call getPriceFeedsUpdateData");
       priceFeedUpdateData = await this.getPriceFeedsUpdateData(priceIds);
     } catch (e: any) {
       console.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "getPriceFeedsUpdateData failed:", e);
@@ -87,6 +89,7 @@ export class NearPricePusher implements IPricePusher {
     for (const data of priceFeedUpdateData) {
       let updateFee;
       try {
+        console.log(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin call getUpdateFeeEstimate");
         updateFee = await this.account.getUpdateFeeEstimate(data);
         console.log(`Update fee: ${updateFee}`);
       } catch (e: any) {
@@ -95,7 +98,7 @@ export class NearPricePusher implements IPricePusher {
       }
 
       try {
-        console.log(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin update");
+        console.log(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin call updatePriceFeeds");
         await this.account.updatePriceFeeds(updateId, priceIds, data, updateFee);
       } catch (e: any) {
         console.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "updatePriceFeeds failed:", e);
