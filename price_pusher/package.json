@@ -28,7 +28,9 @@
     "dev": "ts-node src/index.ts",
     "prepublishOnly": "npm run build && npm test && npm run lint",
     "preversion": "npm run lint",
-    "version": "npm run format && git add -A src"
+    "version": "npm run format && git add -A src",
+    "mainnet": "npx pm2 start --name pyth-price-pusher-mainnet lib/index.js -- near --config config.near.mainnet.json",
+    "testnet": "npx pm2 start --name pyth-price-pusher-testnet lib/index.js -- near --config config.near.testnet.json"
   },
   "keywords": [
     "pyth",
@@ -62,6 +64,7 @@
     "joi": "^17.6.0",
     "log4js": "^6.9.1",
     "near-api-js": "^3.0.2",
+    "pm2": "^5.4.2",
     "uuid": "^10.0.0",
     "web3": "^1.8.1",
     "web3-eth-contract": "^1.8.1",
