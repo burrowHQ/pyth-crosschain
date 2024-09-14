@@ -1,4 +1,5 @@
 import { HexString } from "@pythnetwork/price-service-client";
+import log4js from 'log4js';
 
 export type PctNumber = number;
 export type DurationInSeconds = number;
@@ -47,3 +48,23 @@ export function verifyValidOption<
     option + " is not a valid option. Please choose between " + validOptions;
   throw new Error(errorString);
 }
+
+log4js.configure({
+  appenders: {
+    dateFileAppender: {
+      type: 'dateFile',
+      filename: 'logs/price_pusher',
+      pattern: 'yyyy-MM-dd.log',
+      // keepFileExt: true,
+      daysToKeep: 7,
+      compress: true,
+      maxLogSize: 1024 * 1024 * 1024,
+      alwaysIncludePattern: true
+    }
+  },
+  categories: {
+    default: { appenders: ['dateFileAppender'], level: 'info' }
+  }
+});
+
+export const businessLogger = log4js.getLogger();
