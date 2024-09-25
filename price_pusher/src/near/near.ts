@@ -25,6 +25,8 @@ import { Action, SignedTransaction, functionCall, signTransaction, stringifyJson
 import { base_decode } from "near-api-js/lib/utils/serialize";
 import { v4 as uuidv4 } from "uuid";
 
+import wasm from '../../../wasm/pkg/wasm'
+
 export class NearPriceListener extends ChainPriceListener {
   constructor(
     private account: NearAccount,
@@ -63,11 +65,24 @@ export class NearPriceListener extends ChainPriceListener {
   }
 }
 
+interface CacheDetail {
+  updateId: string,
+  feedId: string,
+  publishTime: number
+}
+
+interface PriceCache {
+  [key: string]: CacheDetail;
+}
+
 export class NearPricePusher implements IPricePusher {
+  private priceCache: PriceCache;
   constructor(
     private account: NearAccount,
     private connection: PriceServiceConnection
-  ) { }
+  ) { 
+    this.priceCache = {};
+  }
 
   async updatePriceFeed(
     priceIds: string[],
@@ -75,33 +90,60 @@ export class NearPricePusher implements IPricePusher {
     _pubTimesToPush: number[]
   ): Promise<void> {
     const updateId = uuidv4();
-    businessLogger.info(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin updatePriceFeed");
+    businessLogger.info(`[UM] (${updateId}) [${priceIds}]`, "begin updatePriceFeed");
 
     let priceFeedUpdateData;
     try {
-      businessLogger.info(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin call getPriceFeedsUpdateData");
+      businessLogger.info(`[UM] (${updateId}) [${priceIds}]`, "begin call getPriceFeedsUpdateData");
       priceFeedUpdateData = await this.getPriceFeedsUpdateData(priceIds);
+      try {
+        for (const priceData of priceFeedUpdateData) {
+          const priceDataDetail = JSON.parse(wasm.parse_latest_vaas(priceData));
+          for (const priceInfo of priceDataDetail) {
+            const feedId = Buffer.from(priceInfo.feed_id).toString('hex');
+            if (feedId in this.priceCache) {
+              const cacheDetail = this.priceCache[feedId];
+              if (cacheDetail.publishTime > priceInfo.publish_time) {
+                businessLogger.warn(`[UM] (${updateId}) [${priceIds}]`, 'feed_id:', feedId, 'oldUpdateId:', cacheDetail.updateId, 'oldPublishTime:', cacheDetail.publishTime, 'currentPublishTime:', priceInfo.publish_time, 'diff:', cacheDetail.publishTime - priceInfo.publish_time);
+              }
+              this.priceCache[feedId] = {
+                updateId,
+                feedId: feedId,
+                publishTime: priceInfo.publish_time
+              };
+            } else {
+              this.priceCache[feedId] = {
+                updateId,
+                feedId: feedId,
+                publishTime: priceInfo.publish_time
+              };
+            }
+          }
+        }
+      } catch (e: any) {
+        businessLogger.error(`[UM] (${updateId}) [${priceIds}]`, "parse latest vaas failed:", e);
+      }
     } catch (e: any) {
-      businessLogger.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "getPriceFeedsUpdateData failed:", e);
+      businessLogger.error(`[UM] (${updateId}) [${priceIds}]`, "getPriceFeedsUpdateData failed:", e);
       return;
     }
 
     for (const data of priceFeedUpdateData) {
       let updateFee;
       try {
-        businessLogger.info(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin call getUpdateFeeEstimate");
+        businessLogger.info(`[UM] (${updateId}) [${priceIds}]`, "begin call getUpdateFeeEstimate");
         updateFee = await this.account.getUpdateFeeEstimate(data);
         console.log(`Update fee: ${updateFee}`);
       } catch (e: any) {
-        businessLogger.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "getUpdateFeeEstimate failed:", e);
+        businessLogger.error(`[UM] (${updateId}) [${priceIds}]`, "getUpdateFeeEstimate failed:", e);
         continue;
       }
 
       try {
-        businessLogger.info(new Date(), `[UM] (${updateId}) [${priceIds}]`, "begin call updatePriceFeeds");
+        businessLogger.info(`[UM] (${updateId}) [${priceIds}]`, "begin call updatePriceFeeds");
         await this.account.updatePriceFeeds(updateId, priceIds, data, updateFee);
       } catch (e: any) {
-        businessLogger.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "updatePriceFeeds failed:", e);
+        businessLogger.error(`[UM] (${updateId}) [${priceIds}]`, "updatePriceFeeds failed:", e);
       }
     }
   }
@@ -179,14 +221,12 @@ export class NearAccount {
       const [is_success, failureMessages] = checkOutcome(outcome);
       if (is_success) {
         businessLogger.info(
-          new Date(),
           `[UM] (${updateId}) [${priceIds}]`,
           "updatePriceFeeds tx successful. Tx hash: ",
           outcome["transaction"]["hash"]
         );
       } else {
         businessLogger.error(
-          new Date(),
           `[UM] (${updateId}) [${priceIds}]`,
           "updatePriceFeeds tx failed:",
           JSON.stringify(failureMessages, undefined, 2)
@@ -235,7 +275,7 @@ export class NearAccount {
     this.account.accessKeyByPublicKeyCache = {};
     const accessKeyInfo = await this.account.findAccessKey(contractId, actions);
     if (!accessKeyInfo) {
-      businessLogger.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, `Can not sign transactions for account ${this.account.accountId} on network ${this.account.connection.networkId}, no matching key pair exists for this account`, 'KeyNotFound');
+      businessLogger.error(`[UM] (${updateId}) [${priceIds}]`, `Can not sign transactions for account ${this.account.accountId} on network ${this.account.connection.networkId}, no matching key pair exists for this account`, 'KeyNotFound');
       return;
     }
     const { accessKey } = accessKeyInfo;
@@ -260,14 +300,12 @@ async function processTransaction(updateId: string, priceIds: string[], url: str
       const [is_success, failureMessages] = checkOutcome(outcome);
       if (is_success) {
         businessLogger.info(
-          new Date(),
           `[UM] (${updateId}) [${priceIds}]`,
           "updatePriceFeeds tx successful. nodeUrl:", url, "Tx hash: ",
           outcome["transaction"]["hash"]
         );
       } else {
         businessLogger.error(
-          new Date(),
           `[UM] (${updateId}) [${priceIds}]`,
           "nodeUrl:", url,
           "updatePriceFeeds tx failed:",
@@ -277,11 +315,11 @@ async function processTransaction(updateId: string, priceIds: string[], url: str
       break;
     } catch (error: any) {
       if (error.type === 'InvalidNonce') {
-        businessLogger.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "nodeUrl:", url, "updatePriceFeeds InvalidNonce failed:", error);
+        businessLogger.error(`[UM] (${updateId}) [${priceIds}]`, "nodeUrl:", url, "updatePriceFeeds InvalidNonce failed:", error);
         break;
       }
       if (i == retryNumber - 1){
-        businessLogger.error(new Date(), `[UM] (${updateId}) [${priceIds}]`, "nodeUrl:", url, "updatePriceFeeds failed:", error);
+        businessLogger.error(`[UM] (${updateId}) [${priceIds}]`, "nodeUrl:", url, "updatePriceFeeds failed:", error);
       }
     }
   }
